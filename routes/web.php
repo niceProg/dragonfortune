@@ -498,4 +498,8 @@ Route::get('/test/coinglass-debug', function() {
     }
 })->name('test.coinglass-debug');
 
+// Test Whale Flow Database Connection
+Route::get('/test/whale-flow-db', [App\Http\Controllers\WhaleTestController::class, 'testConnection'])->name('test.whale.db');
+Route::get('/test/whale-flow-api', [App\Http\Controllers\WhaleTestController::class, 'testWhaleFlowAPI'])->name('test.whale.api');
+
 // API consumption happens directly from frontend using meta api-base-url

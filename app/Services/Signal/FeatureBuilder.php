@@ -137,19 +137,32 @@ class FeatureBuilder
         $upperBound = $timestampMs ? intdiv($timestampMs, 1000) : null;
 
         // Try to fetch whale transfers with fallback to raw query
+        \Log::info("Building whale features for symbol: {$symbol}");
+
         try {
             $raw = $this->marketData->latestWhaleTransfers($symbol, $lookbackTs, 2000, $upperBound);
+            \Log::info("Initial whale query returned {$raw->count()} records");
 
             if ($raw->isEmpty()) {
+                \Log::info("No records found with time filter, trying without time filter");
                 $raw = $this->marketData->latestWhaleTransfers($symbol, null, 2000, $upperBound);
+                \Log::info("Fallback whale query returned {$raw->count()} records");
             }
         } catch (\Exception $e) {
             // Fallback to raw query if model method fails
             \Log::warning('Whale transfers model query failed, trying raw query: ' . $e->getMessage());
-            $raw = $this->marketData->latestWhaleTransfersRaw($symbol, $lookbackTs, 2000, $upperBound);
+            try {
+                $raw = $this->marketData->latestWhaleTransfersRaw($symbol, $lookbackTs, 2000, $upperBound);
+                \Log::info("Raw query with time filter returned {$raw->count()} records");
 
-            if ($raw->isEmpty()) {
-                $raw = $this->marketData->latestWhaleTransfersRaw($symbol, null, 2000, $upperBound);
+                if ($raw->isEmpty()) {
+                    \Log::info("Raw query with time filter empty, trying without time filter");
+                    $raw = $this->marketData->latestWhaleTransfersRaw($symbol, null, 2000, $upperBound);
+                    \Log::info("Raw query fallback returned {$raw->count()} records");
+                }
+            } catch (\Exception $e2) {
+                \Log::error('All whale transfer queries failed: ' . $e2->getMessage());
+                $raw = collect();
             }
         }
 

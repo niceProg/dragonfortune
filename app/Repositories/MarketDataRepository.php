@@ -102,10 +102,14 @@ class MarketDataRepository
                 $query->upTo($upTo);
             }
 
-            return $query->get();
+            \Log::info("Executing whale transfer query for {$assetSymbol}, limit: {$limit}");
+            $result = $query->get();
+            \Log::info("Whale transfer query executed successfully, returned {$result->count()} records");
+            return $result;
         } catch (\Exception $e) {
             // Log the error and return empty collection for graceful degradation
             \Log::error('Error fetching whale transfers from database: ' . $e->getMessage());
+            \Log::error('Query parameters: symbol=' . $assetSymbol . ', since=' . $sinceTimestamp . ', limit=' . $limit);
             return collect();
         }
     }
