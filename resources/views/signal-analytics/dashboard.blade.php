@@ -355,7 +355,6 @@
                     <div class="d-flex align-items-center gap-2">
                         <span class="badge text-bg-light">USD</span>
                         <span class="badge text-bg-warning-subtle text-warning fw-semibold" x-show="features?.whales?.is_stale">Stale</span>
-                        <span class="badge text-bg-info-subtle text-info" x-show="features?.whales?.data_source" x-text="features.whales.data_source"></span>
                     </div>
                 </div>
                 <dl class="row small mb-0">
@@ -365,20 +364,8 @@
                     <dd class="col-6 fw-semibold" x-text="formatUsd(features?.whales?.window_24h?.outflow_usd)"></dd>
                     <dt class="col-6 text-muted">Net</dt>
                     <dd class="col-6 fw-semibold" x-text="formatUsd(features?.whales?.window_24h?.net_usd)"></dd>
-                    <template x-if="features?.whales?.total_transfers || features?.whales?.sample_size">
-                        <dt class="col-6 text-muted">Total Transfers</dt>
-                        <dd class="col-6 fw-semibold" x-text="features.whales.total_transfers || (features.whales.sample_size.d24 + features.whales.sample_size.d7)"></dd>
-                    </template>
                 </dl>
                 <div class="small text-muted mt-3" x-text="whaleStatus()"></div>
-
-                <!-- Debug section - remove this once data is working -->
-                <div class="mt-3 p-2 border rounded bg-light text-dark" x-show="!isLoading && features">
-                    <small class="fw-bold">DEBUG - Whale Data:</small>
-                    <pre class="small mb-0" x-text="JSON.stringify(features.whales, null, 2)"></pre>
-                </div>
-                <!-- End debug section -->
-
             </div>
         </div>
         <div class="col-lg-6">
@@ -657,29 +644,13 @@ document.addEventListener('alpine:init', () => {
         },
         whaleStatus() {
             if (!this.features?.whales) return 'Menunggu data whale tracking';
-
-            // Show error message if there's a database error
-            if (this.features.whales.error) {
-                return `Error: ${this.features.whales.error}`;
-            }
-
             if (this.features.whales.is_stale) return 'Belum ada catatan transfer baru >7 hari';
-
             const inflow = this.features.whales.window_24h?.count_inflow ?? 0;
             const outflow = this.features.whales.window_24h?.count_outflow ?? 0;
-            const total = inflow + outflow;
-
-            if (total === 0) {
+            if (inflow + outflow === 0) {
                 return 'Tidak ada transfer besar 24 jam terakhir';
             }
-
-            // Show more detailed status with data source info
-            let status = `${total} transfer besar terdeteksi 24 jam terakhir`;
-            if (this.features.whales.data_source) {
-                status += ` (Source: ${this.features.whales.data_source})`;
-            }
-
-            return status;
+            return `${inflow + outflow} transfer besar terdeteksi 24 jam terakhir`;
         },
         etfInterpretation() {
             const latest = this.features?.etf?.latest_flow;

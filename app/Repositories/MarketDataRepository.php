@@ -2,7 +2,6 @@
 
 namespace App\Repositories;
 
-use App\Models\WhaleTransfer;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -89,40 +88,6 @@ class MarketDataRepository
         int $limit = 200,
         ?int $upTo = null
     ): Collection {
-        try {
-            $query = WhaleTransfer::forSymbol($assetSymbol)
-                ->latest()
-                ->limit($limit);
-
-            if ($sinceTimestamp) {
-                $query->since($sinceTimestamp);
-            }
-
-            if ($upTo) {
-                $query->upTo($upTo);
-            }
-
-            \Log::info("Executing whale transfer query for {$assetSymbol}, limit: {$limit}");
-            $result = $query->get();
-            \Log::info("Whale transfer query executed successfully, returned {$result->count()} records");
-            return $result;
-        } catch (\Exception $e) {
-            // Log the error and return empty collection for graceful degradation
-            \Log::error('Error fetching whale transfers from database: ' . $e->getMessage());
-            \Log::error('Query parameters: symbol=' . $assetSymbol . ', since=' . $sinceTimestamp . ', limit=' . $limit);
-            return collect();
-        }
-    }
-
-    /**
-     * Whale transfers with raw DB query fallback for performance.
-     */
-    public function latestWhaleTransfersRaw(
-        string $assetSymbol,
-        ?int $sinceTimestamp = null,
-        int $limit = 200,
-        ?int $upTo = null
-    ): Collection {
         $query = DB::table($this->whaleTransfersTable)
             ->select(
                 'transaction_hash',
@@ -132,10 +97,8 @@ class MarketDataRepository
                 'from_address',
                 'to_address',
                 'blockchain_name',
-                'block_height',
                 'block_timestamp',
-                'created_at',
-                'updated_at'
+                'created_at'
             )
             ->where('asset_symbol', strtoupper($assetSymbol))
             ->orderByDesc('block_timestamp')
@@ -149,14 +112,7 @@ class MarketDataRepository
             $query->where('block_timestamp', '<=', $upTo);
         }
 
-        // Add error handling for database connection issues
-        try {
-            return $query->get();
-        } catch (\Exception $e) {
-            // Log the error and return empty collection
-            \Log::error('Error fetching whale transfers (raw query): ' . $e->getMessage());
-            return collect();
-        }
+        return $query->get();
     }
 
     public function latestEtfFlows(int $limit = 120, ?int $upTo = null): Collection
