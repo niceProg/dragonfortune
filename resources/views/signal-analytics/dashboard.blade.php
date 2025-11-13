@@ -88,6 +88,87 @@
         transform: scale(1.1);
         z-index: 10;
     }
+
+    /* Enhanced Timeline Styles */
+    .timeline-items-container {
+        max-height: 600px;
+        overflow-y: auto;
+        padding-right: 8px;
+    }
+
+    .timeline-item-enhanced {
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin-bottom: 12px;
+        background: white;
+        transition: all 0.3s ease;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .timeline-item-enhanced:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .timeline-item-enhanced.buy-signal {
+        border-left: 4px solid #198754;
+        background: linear-gradient(90deg, rgba(25, 135, 84, 0.05) 0%, transparent 100%);
+    }
+
+    .timeline-item-enhanced.sell-signal {
+        border-left: 4px solid #dc3545;
+        background: linear-gradient(90deg, rgba(220, 53, 69, 0.05) 0%, transparent 100%);
+    }
+
+    .timeline-item-enhanced.hold-signal {
+        border-left: 4px solid #6c757d;
+        background: linear-gradient(90deg, rgba(108, 117, 125, 0.05) 0%, transparent 100%);
+    }
+
+    .signal-info {
+        display: flex;
+        align-items: center;
+    }
+
+    .signal-time {
+        text-align: right;
+    }
+
+    .timeline-header {
+        position: sticky;
+        top: 0;
+        background: white;
+        z-index: 10;
+    }
+
+    /* Fade effect for older items */
+    .timeline-item-enhanced:nth-child(n+20) {
+        opacity: 0.8;
+    }
+
+    .timeline-item-enhanced:nth-child(n+35) {
+        opacity: 0.6;
+    }
+
+    /* Scrollbar styling */
+    .timeline-items-container::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .timeline-items-container::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 3px;
+    }
+
+    .timeline-items-container::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 3px;
+    }
+
+    .timeline-items-container::-webkit-scrollbar-thumb:hover {
+        background: #a8a8a8;
+    }
 </style>
 @endpush
 
@@ -234,20 +315,100 @@
     <!-- Enhanced Signal Timeline -->
     <div class="df-panel p-4 mb-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0">Signal Timeline (Last 50 signals)</h5>
-            <button class="btn btn-sm btn-outline-secondary" @click="fetchHistory" :disabled="isLoading">
-                <i class="fas fa-sync me-1"></i> Refresh Timeline
-            </button>
+            <h5 class="mb-0">📈 Signal Timeline (Last 50 signals)</h5>
+            <div class="d-flex gap-2 align-items-center">
+                <span class="badge text-bg-primary" x-show="history.length" x-text="`${history.length} total`"></span>
+                <button class="btn btn-sm btn-outline-secondary" @click="fetchHistory" :disabled="isLoading">
+                    <i class="fas fa-sync me-1" :class="{'fa-spin': isLoading}"></i> Refresh
+                </button>
+            </div>
         </div>
-        <div class="signal-timeline">
-            <template x-for="(item, idx) in history.slice(-50).reverse()" :key="item.generated_at">
-                <div class="timeline-item"
-                     :class="item.signal === 'BUY' ? 'bg-success text-white' : (item.signal === 'SELL' ? 'bg-danger text-white' : 'bg-secondary text-white')"
-                     :title="`${formatDateTime(item.generated_at)}: ${item.signal} (${item.score?.toFixed(2)})`">
-                    <div x-text="new Date(item.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"></div>
-                    <div class="fw-bold" x-text="item.signal"></div>
+
+        <!-- Timeline Summary Stats -->
+        <div class="row g-2 mb-3" x-show="timelineSignals.length > 0">
+            <div class="col-4">
+                <div class="text-center p-2 bg-success bg-opacity-10 border rounded">
+                    <div class="h5 mb-0 text-success fw-bold" x-text="timelineStats.buys"></div>
+                    <div class="small text-muted">BUY</div>
                 </div>
-            </template>
+            </div>
+            <div class="col-4">
+                <div class="text-center p-2 bg-danger bg-opacity-10 border rounded">
+                    <div class="h5 mb-0 text-danger fw-bold" x-text="timelineStats.sells"></div>
+                    <div class="small text-muted">SELL</div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="text-center p-2 bg-secondary bg-opacity-10 border rounded">
+                    <div class="h5 mb-0 text-secondary fw-bold" x-text="timelineStats.holds"></div>
+                    <div class="small text-muted">HOLD</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Enhanced Timeline Display -->
+        <div class="signal-timeline-enhanced" x-show="timelineSignals.length > 0">
+            <!-- Timeline Header -->
+            <div class="timeline-header d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                <div class="fw-semibold">Recent Signals (Most Recent First)</div>
+                <div class="small text-muted" x-show="timelineSignals.length > 0">
+                    <span x-text="timelineSignals[0]?.generated_at ? `Latest: ${formatTime(timelineSignals[0].generated_at)}` : ''"></span>
+                </div>
+            </div>
+
+            <!-- Timeline Items -->
+            <div class="timeline-items-container">
+                <template x-for="(item, idx) in timelineSignals" :key="item.generated_at">
+                    <div class="timeline-item-enhanced"
+                         :class="getTimelineItemClass(item)"
+                         :style="getTimelineItemStyle(idx, timelineSignals.length)">
+
+                        <!-- Signal Info -->
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div class="signal-info">
+                                <span class="badge fs-6 px-2 py-1"
+                                      :class="getSignalBadgeClass(item.signal)"
+                                      x-text="item.signal"></span>
+                                <span class="ms-2 small text-muted" x-text="item.score?.toFixed(2)"></span>
+                            </div>
+                            <div class="signal-time">
+                                <div class="small fw-semibold" x-text="formatTimelineDate(item.generated_at)"></div>
+                                <div class="text-muted smaller" x-text="formatTimelineTime(item.generated_at)"></div>
+                            </div>
+                        </div>
+
+                        <!-- Additional Info -->
+                        <div class="row g-1 text-muted smaller">
+                            <div class="col-6">
+                                <span x-show="item.confidence">Conf: <span x-text="formatPercent(item.confidence * 100, 1)"></span></span>
+                            </div>
+                            <div class="col-6 text-end">
+                                <span x-show="item.outcome && item.outcome !== 'PENDING'">
+                                    Outcome: <span :class="getOutcomeClass(item.outcome)" x-text="item.outcome"></span>
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- AI Decision Indicator -->
+                        <div class="mt-2" x-show="item.ai_decision">
+                            <span class="badge bg-light text-dark smaller"
+                                  :class="getAIBadgeClass(item.ai_decision)">
+                                <i class="fas fa-robot me-1"></i><span x-text="item.ai_decision"></span>
+                                <span x-show="item.ai_probability" class="ms-1" x-text="formatPercent(item.ai_probability * 100, 0)"></span>
+                            </span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div class="text-center py-4" x-show="timelineSignals.length === 0">
+            <div class="text-muted">
+                <i class="fas fa-chart-line fa-2x mb-2"></i>
+                <div>No signal data available</div>
+                <small>Run signal collection commands to generate timeline data</small>
+            </div>
         </div>
     </div>
 
@@ -1248,6 +1409,94 @@ document.addEventListener('alpine:init', () => {
             if (vol > 5) return 'text-danger';
             if (vol < 1.5) return 'text-success';
             return 'text-warning';
+        },
+
+        // Enhanced Timeline Methods
+        get timelineSignals() {
+            // Get last 50 signals, sorted by most recent first
+            return this.history
+                .slice(-50)
+                .reverse()
+                .map(item => ({
+                    ...item,
+                    // Ensure consistent field names
+                    signal: item.signal || item.signal_rule,
+                    score: item.score || item.signal_score,
+                    confidence: item.confidence || item.signal_confidence,
+                    outcome: item.outcome || item.label_direction,
+                    generated_at: new Date(item.generated_at)
+                }));
+        },
+        get timelineStats() {
+            const signals = this.timelineSignals;
+            return {
+                buys: signals.filter(s => s.signal === 'BUY').length,
+                sells: signals.filter(s => s.signal === 'SELL').length,
+                holds: signals.filter(s => s.signal === 'HOLD' || s.signal === 'NEUTRAL').length
+            };
+        },
+        getTimelineItemClass(item) {
+            const signalClass = item.signal === 'BUY' ? 'buy-signal' :
+                              (item.signal === 'SELL' ? 'sell-signal' : 'hold-signal');
+            return `timeline-item-enhanced ${signalClass}`;
+        },
+        getTimelineItemStyle(idx, total) {
+            // Subtle gradient fade for older items
+            const opacity = 1 - (idx / total) * 0.3;
+            return { opacity: opacity };
+        },
+        getSignalBadgeClass(signal) {
+            switch(signal) {
+                case 'BUY': return 'bg-success';
+                case 'SELL': return 'bg-danger';
+                case 'HOLD':
+                case 'NEUTRAL': return 'bg-secondary';
+                default: return 'bg-light text-dark';
+            }
+        },
+        getAIBadgeClass(aiDecision) {
+            switch(aiDecision) {
+                case 'BUY': return 'bg-success bg-opacity-25 text-success';
+                case 'SELL': return 'bg-danger bg-opacity-25 text-danger';
+                case 'HOLD': return 'bg-warning bg-opacity-25 text-warning';
+                default: return 'bg-light text-dark';
+            }
+        },
+        getOutcomeClass(outcome) {
+            switch(outcome) {
+                case 'UP': return 'text-success fw-bold';
+                case 'DOWN': return 'text-danger fw-bold';
+                case 'SIDEWAYS': return 'text-warning fw-bold';
+                default: return 'text-muted';
+            }
+        },
+        formatTimelineDate(date) {
+            if (!date) return '';
+            const d = new Date(date);
+            return d.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                ...(d.getFullYear() !== new Date().getFullYear() && { year: 'numeric' })
+            });
+        },
+        formatTimelineTime(date) {
+            if (!date) return '';
+            const d = new Date(date);
+            const now = new Date();
+            const diffMs = now - d;
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffDays = Math.floor(diffHours / 24);
+
+            if (diffDays > 0) {
+                return `${diffDays}d ago`;
+            } else if (diffHours > 0) {
+                return `${diffHours}h ago`;
+            } else {
+                return d.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
         }
     }));
 });

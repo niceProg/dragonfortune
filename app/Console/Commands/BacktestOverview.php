@@ -275,9 +275,23 @@ class BacktestOverview extends Command
         if ($returns->count() < 2) return 0;
 
         $avgReturn = $returns->avg();
-        $stdDev = $returns->stdDev();
+        $stdDev = $this->calculateStandardDeviation($returns);
 
         return $stdDev > 0 ? ($avgReturn / $stdDev) * sqrt(252) : 0; // Annualized Sharpe
+    }
+
+    protected function calculateStandardDeviation($returns): float
+    {
+        $count = $returns->count();
+        if ($count < 2) return 0;
+
+        $mean = $returns->avg();
+        $squaredDiffs = $returns->map(function($value) use ($mean) {
+            return pow($value - $mean, 2);
+        });
+
+        $variance = $squaredDiffs->sum() / ($count - 1);
+        return sqrt($variance);
     }
 
     protected function displayOverview($results, $symbol, $start, $end): void

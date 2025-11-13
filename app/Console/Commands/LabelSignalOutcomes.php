@@ -92,6 +92,15 @@ class LabelSignalOutcomes extends Command
             $query->whereNull('price_future');
         }
 
+        // If no unlabeled snapshots found, check if we have labeled ones and suggest forcing
+        if (!$force && $query->count() === 0) {
+            $totalSnapshots = SignalSnapshot::where('symbol', $symbol)->whereBetween('generated_at', [$start, $cutoff])->count();
+            if ($totalSnapshots > 0) {
+                $this->warn("All {$totalSnapshots} snapshots are already labeled. Use --force to relabel them.");
+                $this->info("Example: php artisan signal:label --symbol=BTC --start={$start->format('Y-m-d')} --end={$end->format('Y-m-d')} --limit={$limit} --force");
+            }
+        }
+
         $snapshots = $query->limit($limit)->get();
 
         if ($snapshots->isEmpty()) {

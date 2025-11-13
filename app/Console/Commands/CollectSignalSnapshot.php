@@ -15,6 +15,9 @@ class CollectSignalSnapshot extends Command
         {--symbol= : Asset symbol to collect (defaults to configured list)}
         {--pair= : Derivatives pair (defaults to SYMBOLUSDT)}
         {--interval= : Candle interval (defaults to config)}
+        {--start= : Start datetime for batch mode (YYYY-MM-DD HH:MM:SS)}
+        {--end= : End datetime for batch mode (YYYY-MM-DD HH:MM:SS)}
+        {--days= : Number of days back to collect (alternative to start/end)}
         {--dry-run : Only print payload without storing}
         {--batch : Enable batch mode for multiple timestamps}
         {--count=1 : Number of snapshots to collect in batch mode}
@@ -51,6 +54,20 @@ class CollectSignalSnapshot extends Command
         $interval = $this->option('interval') ?? config('signal.default_interval', '1h');
         $count = max(1, (int) $this->option('count'));
         $step = max(1, (int) $this->option('step'));
+
+        // Handle --days option
+        if ($this->option('days')) {
+            $days = max(1, (int) $this->option('days'));
+            $end = now('UTC');
+            $start = $end->copy()->subDays($days);
+
+            // Calculate how many snapshots we need
+            $intervalMinutes = $this->intervalToMinutes($interval);
+            $totalMinutes = $start->diffInMinutes($end);
+            $snapshotsNeeded = max(1, intval($totalMinutes / $intervalMinutes));
+
+            return $this->handleDateRangeCollection($symbols, $interval, $start, $end, $snapshotsNeeded, $dryRun, $validate, $outputFormat);
+        }
 
         if ($batchMode && $count > 1) {
             return $this->handleBatchCollection($symbols, $interval, $count, $step, $dryRun, $validate, $outputFormat);
@@ -338,5 +355,68 @@ class CollectSignalSnapshot extends Command
         }
 
         return false;
+    }
+
+    protected function handleDateRangeCollection(
+        array $symbols,
+        string $interval,
+        Carbon $start,
+        Carbon $end,
+        int $snapshotsNeeded,
+        bool $dryRun,
+        bool $validate,
+        string $outputFormat
+    ): int {
+        $this->info("Starting date range collection: {$snapshotsNeeded} snapshots from {$start->toIso8601String()} to {$end->toIso8601String()}");
+
+        $results = [];
+        $intervalMinutes = $this->intervalToMinutes($interval);
+
+        foreach ($symbols as $symbol) {
+            $pair = strtoupper($this->option('pair') ?: "{$symbol}USDT");
+            $this->info("Processing {$symbol}...");
+
+            for ($i = 0; $i < $snapshotsNeeded; $i++) {
+                $generatedAt = $start->copy()->addMinutes($i * $intervalMinutes);
+
+                try {
+                    if ($dryRun) {
+                        $results[] = $this->generateDryRunResult($symbol, $pair, $interval, $generatedAt);
+                    } else {
+                        $this->collectSnapshotAt($symbol, $pair, $interval, $generatedAt, $validate, $force = true);
+                    }
+                } catch (\Exception $e) {
+                    $this->error("Failed to collect {$symbol} at {$generatedAt->toIso8601String()}: " . $e->getMessage());
+                }
+            }
+        }
+
+        if ($dryRun) {
+            $this->displayResults($results, $outputFormat);
+        }
+
+        return self::SUCCESS;
+    }
+
+    protected function intervalToMinutes(string $interval): int
+    {
+        // Convert interval strings to minutes
+        switch (strtolower($interval)) {
+            case '1m': return 1;
+            case '5m': return 5;
+            case '15m': return 15;
+            case '30m': return 30;
+            case '1h': return 60;
+            case '4h': return 240;
+            case '1d': return 1440;
+            default:
+                // Try to parse as number + unit
+                if (preg_match('/^(\d+)([mh])$/i', $interval, $matches)) {
+                    $value = (int) $matches[1];
+                    $unit = strtolower($matches[2]);
+                    return $unit === 'h' ? $value * 60 : $value;
+                }
+                return 60; // Default to 1 hour
+        }
     }
 }
