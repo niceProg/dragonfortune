@@ -210,8 +210,10 @@ class SignalStatus extends Command
                 $status[$table] = [
                     'name' => $name,
                     'table_exists' => false,
+                    'record_count' => 0,
                     'error' => $e->getMessage(),
                     'status' => 'error',
+                    'latest_record' => null,
                 ];
             }
         }
@@ -513,7 +515,7 @@ class SignalStatus extends Command
             $age = $source['latest_record']['age_hours'] ?? 'N/A';
             $dataSourceData[] = [
                 $source['name'],
-                number_format($source['record_count']),
+                number_format($source['record_count'] ?? 0),
                 $source['status'],
                 $age === 'N/A' ? 'N/A' : $age . 'h'
             ];
