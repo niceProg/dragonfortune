@@ -2,20 +2,121 @@
 
 @section('title', 'Signal & Analytics | DragonFortune')
 
+@push('styles')
+<style>
+    .signal-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 16px;
+        color: white;
+    }
+    .signal-card.buy { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+    .signal-card.sell { background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%); }
+    .signal-card.neutral { background: linear-gradient(135deg, #8e9eab 0%, #eef2f3 100%); }
+
+    .quality-gauge {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        background: conic-gradient(
+            from 0deg,
+            #22c55e 0deg 120deg,
+            #eab308 120deg 240deg,
+            #ef4444 240deg 360deg
+        );
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .quality-gauge::before {
+        content: '';
+        position: absolute;
+        width: 80%;
+        height: 80%;
+        background: white;
+        border-radius: 50%;
+    }
+    .quality-gauge span {
+        position: relative;
+        z-index: 1;
+        font-weight: bold;
+        color: #333;
+    }
+
+    .factor-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+    }
+
+    .progress-ring {
+        transform: rotate(-90deg);
+    }
+
+    .data-health-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .health-excellent { background-color: #22c55e; }
+    .health-good { background-color: #eab308; }
+    .health-poor { background-color: #ef4444; }
+
+    .timeline-chart {
+        min-height: 200px;
+    }
+
+    .signal-timeline {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 8px 0;
+    }
+    .timeline-item {
+        min-width: 60px;
+        text-align: center;
+        font-size: 11px;
+        padding: 4px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .timeline-item:hover {
+        transform: scale(1.1);
+        z-index: 10;
+    }
+</style>
+@endpush
+
 @section('content')
-<div class="d-flex flex-column gap-3" x-data="signalAnalytics()" x-init="init()" x-cloak>
+<div class="d-flex flex-column gap-4" x-data="signalAnalytics()" x-init="init()" x-cloak>
+    <!-- Enhanced Header -->
     <div class="derivatives-header">
         <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
-            <div>
-                <div class="d-flex align-items-center gap-3 mb-1">
-                    <h1 class="mb-0">Signal & Analytics</h1>
-                    <span class="badge rounded-pill" :class="signalBadgeClass()" x-text="signal?.signal ?? 'NEUTRAL'"></span>
-                    <span class="pulse-dot pulse-success" x-show="!isLoading"></span>
-                    <span class="spinner-border spinner-border-sm text-primary" style="width:16px;height:16px;" x-show="isLoading"></span>
+            <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-3 mb-2">
+                    <h1 class="mb-0">Signal Intelligence Dashboard</h1>
+                    <div class="signal-card p-2 px-3" :class="signal?.signal?.toLowerCase()">
+                        <span class="fw-bold" x-text="signal?.signal ?? 'NEUTRAL'"></span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="pulse-dot pulse-success" x-show="!isLoading && lastUpdated"></span>
+                        <span class="spinner-border spinner-border-sm text-primary" style="width:16px;height:16px;" x-show="isLoading"></span>
+                        <small class="text-muted" x-show="lastUpdated">Updated <span x-text="formatTime(lastUpdated)"></span></small>
+                    </div>
                 </div>
                 <p class="mb-0 text-secondary">
-                    Multi-factor signal engine untuk <strong x-text="symbol"></strong> (pair <strong x-text="pairLabel()"></strong>) yang menggabungkan Funding, OI, Whale, ETF, Sentimen, dan microstructure.
+                    Advanced AI-powered signal analysis for <strong x-text="symbol"></strong> (pair <strong x-text="pairLabel()"></strong>)
+                    combining funding, OI, whale activity, ETF flows, sentiment, and microstructure data.
                 </p>
+                <div class="d-flex gap-3 mt-2">
+                    <small><i class="fas fa-database text-primary"></i> <span x-text="history.length"></span> historical signals</small>
+                    <small><i class="fas fa-chart-line text-success"></i> <span x-text="backtest?.total ?? 0"></span> backtest samples</small>
+                    <small><i class="fas fa-robot text-info"></i> AI Model <span x-text="ai ? 'Active' : 'Inactive'"></span></small>
+                </div>
             </div>
             <div class="d-flex gap-2 flex-wrap">
                 <select class="form-select" style="width:130px;" x-model="symbol" @change="onSymbolChange">
@@ -28,154 +129,261 @@
                     <option value="4h">4H</option>
                     <option value="1d">1D</option>
                 </select>
-                <button class="btn btn-outline-primary" @click="fetchData" :disabled="isLoading">
-                    <i class="fas fa-sync-alt" :class="{'fa-spin': isLoading}"></i>
-                    Refresh
-                </button>
+                <div class="btn-group">
+                    <button class="btn btn-outline-primary" @click="fetchData" :disabled="isLoading">
+                        <i class="fas fa-sync-alt" :class="{'fa-spin': isLoading}"></i>
+                        Refresh
+                    </button>
+                    <button class="btn btn-outline-info" @click="fetchHistory" :disabled="isLoading">
+                        <i class="fas fa-history"></i>
+                        History
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="row g-3">
+    <!-- Enhanced Top Row: Signal Quality, Market Regime, AI Confidence -->
+    <div class="row g-3 mb-4">
         <div class="col-xl-4 col-lg-6">
             <div class="df-panel h-100 p-4">
-                <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="mb-0 text-uppercase text-muted small">Signal Quality</h5>
-                    <span class="badge" :class="qualityBadgeClass()" x-text="signal?.quality?.status ?? 'N/A'"></span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="data-health-indicator" :class="dataHealthClass()"></span>
+                        <span class="badge" :class="qualityBadgeClass()" x-text="signal?.quality?.status ?? 'N/A'"></span>
+                    </div>
                 </div>
-                <div class="display-6 fw-semibold mb-1" x-text="qualityScoreLabel()"></div>
-                <p class="text-muted small mb-3">Menggabungkan kelengkapan data, kondisi volatilitas, dan filter risiko.</p>
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="quality-gauge">
+                        <span x-text="qualityScoreLabel()"></span>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="h4 mb-1" x-text="signal?.signal ?? 'NEUTRAL'"></div>
+                        <div class="text-muted small">Score: <span x-text="signal?.score?.toFixed(2) ?? '--'"></span></div>
+                    </div>
+                </div>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <template x-for="flag in (signal?.quality?.flags ?? [])" :key="flag.code">
                         <span class="badge rounded-pill" :class="flagBadgeClass(flag.severity)" x-text="flag.label"></span>
                     </template>
-                    <span class="text-muted small" x-show="!(signal?.quality?.flags?.length)">Tidak ada filter aktif</span>
+                    <span class="text-muted small" x-show="!(signal?.quality?.flags?.length)">✨ All systems operational</span>
                 </div>
             </div>
         </div>
         <div class="col-xl-4 col-lg-6">
             <div class="df-panel h-100 p-4">
-                <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="mb-0 text-uppercase text-muted small">Market Regime</h5>
                     <span class="badge" :class="regimeBadgeClass()" x-text="signal?.meta?.regime ?? '--'"></span>
                 </div>
-                <div class="h3 fw-semibold mb-1" x-text="features?.momentum?.regime_reason ?? 'Menunggu data'"></div>
-                <div class="row mt-3 g-2">
+                <div class="h3 fw-semibold mb-2" x-text="features?.momentum?.regime_reason ?? 'Analyzing...'"></div>
+                <div class="row g-2 mb-3">
                     <div class="col-6">
-                        <div class="border rounded p-2">
-                            <div class="small text-muted text-uppercase">Trend Score</div>
-                            <div class="fw-semibold" x-text="formatNumber(features?.momentum?.trend_score, 2)"></div>
+                        <div class="bg-light rounded p-2 text-center">
+                            <div class="small text-muted">Trend Score</div>
+                            <div class="fw-bold text-primary" x-text="formatNumber(features?.momentum?.trend_score, 2)"></div>
                         </div>
                     </div>
                     <div class="col-6">
-                        <div class="border rounded p-2">
-                            <div class="small text-muted text-uppercase">Range Width</div>
-                            <div class="fw-semibold" x-text="formatPercent(features?.momentum?.range?.width_pct)"></div>
+                        <div class="bg-light rounded p-2 text-center">
+                            <div class="small text-muted">Range Width</div>
+                            <div class="fw-bold text-info" x-text="formatPercent(features?.momentum?.range?.width_pct)"></div>
                         </div>
                     </div>
+                </div>
+                <div class="row g-2">
                     <div class="col-6">
-                        <div class="border rounded p-2">
-                            <div class="small text-muted text-uppercase">Mom 24h</div>
-                            <div class="fw-semibold" x-text="formatPercent(features?.momentum?.momentum_1d_pct)"></div>
-                        </div>
+                        <div class="small text-muted">24h Momentum</div>
+                        <div class="fw-semibold" :class="features?.momentum?.momentum_1d_pct > 0 ? 'text-success' : 'text-danger'" x-text="formatPercent(features?.momentum?.momentum_1d_pct)"></div>
                     </div>
                     <div class="col-6">
-                        <div class="border rounded p-2">
-                            <div class="small text-muted text-uppercase">Mom 7d</div>
-                            <div class="fw-semibold" x-text="formatPercent(features?.momentum?.momentum_7d_pct)"></div>
-                        </div>
+                        <div class="small text-muted">7d Momentum</div>
+                        <div class="fw-semibold" :class="features?.momentum?.momentum_7d_pct > 0 ? 'text-success' : 'text-danger'" x-text="formatPercent(features?.momentum?.momentum_7d_pct)"></div>
                     </div>
                 </div>
             </div>
         </div>
         <div class="col-xl-4">
             <div class="df-panel h-100 p-4">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h5 class="mb-0 text-uppercase text-muted small">Long / Short Sentiment</h5>
-                    <span class="badge text-bg-warning-subtle text-warning" x-show="features?.long_short?.is_stale">Stale</span>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0 text-uppercase text-muted small">AI Analysis</h5>
+                    <span class="badge" :class="aiBadgeClass()" x-text="ai?.decision ?? 'N/A'"></span>
                 </div>
-                <div class="row small g-2 mb-2">
-                    <div class="col-6">
-                        <div class="border rounded p-2 h-100">
-                            <div class="text-muted text-uppercase">Global</div>
-                            <div class="fw-semibold" x-text="formatPercent(features?.long_short?.global?.net_ratio ? features.long_short.global.net_ratio * 100 : null, 1)"></div>
-                            <div class="text-muted" x-text="signal?.meta?.long_short_bias ?? '--'"></div>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="border rounded p-2 h-100">
-                            <div class="text-muted text-uppercase">Top Traders</div>
-                            <div class="fw-semibold" x-text="formatPercent(features?.long_short?.top?.net_ratio ? features.long_short.top.net_ratio * 100 : null, 1)"></div>
-                            <div class="text-muted" x-text="signal?.meta?.top_trader_bias ?? '--'"></div>
-                        </div>
+                <div class="text-center mb-3">
+                    <div class="h2 fw-bold mb-1" :class="ai?.probability > 0.6 ? 'text-success' : (ai?.probability < 0.4 ? 'text-danger' : 'text-warning')" x-text="ai ? formatPercent(ai.probability * 100) : '--'"></div>
+                    <div class="small text-muted">AI Probability</div>
+                    <div class="progress mt-2" style="height: 6px;">
+                        <div class="progress-bar" :class="ai?.probability > 0.6 ? 'bg-success' : (ai?.probability < 0.4 ? 'bg-danger' : 'bg-warning')" :style="`width: ${ai ? ai.probability * 100 : 0}%`"></div>
                     </div>
                 </div>
-                <div class="d-flex justify-content-between small">
-                    <span class="text-muted">Divergensi</span>
-                    <span class="fw-semibold" x-text="formatPercent(features?.long_short?.divergence ? features.long_short.divergence * 100 : null, 2)"></span>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <div class="small text-muted">Confidence</div>
+                        <div class="fw-semibold" x-text="ai ? formatPercent(ai.confidence * 100) : '--'"></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="small text-muted">Edge</div>
+                        <div class="fw-semibold" x-text="ai ? formatPercent(Math.abs(ai.probability - 0.5) * 200) : '--'"></div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="row g-3">
-        <div class="col-lg-4">
+    <!-- Enhanced Signal Timeline -->
+    <div class="df-panel p-4 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Signal Timeline (Last 50 signals)</h5>
+            <button class="btn btn-sm btn-outline-secondary" @click="fetchHistory" :disabled="isLoading">
+                <i class="fas fa-sync me-1"></i> Refresh Timeline
+            </button>
+        </div>
+        <div class="signal-timeline">
+            <template x-for="(item, idx) in history.slice(-50).reverse()" :key="item.generated_at">
+                <div class="timeline-item"
+                     :class="item.signal === 'BUY' ? 'bg-success text-white' : (item.signal === 'SELL' ? 'bg-danger text-white' : 'bg-secondary text-white')"
+                     :title="`${formatDateTime(item.generated_at)}: ${item.signal} (${item.score?.toFixed(2)})`">
+                    <div x-text="new Date(item.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"></div>
+                    <div class="fw-bold" x-text="item.signal"></div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Enhanced Factor Grid -->
+    <div class="df-panel p-4 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Market Factor Analysis</h5>
+            <div class="d-flex gap-2">
+                <span class="badge rounded-pill text-bg-info" x-show="lastUpdated">Live Data</span>
+                <span class="badge rounded-pill text-bg-warning" x-show="features?.health?.completeness < 0.8">Data Gaps</span>
+            </div>
+        </div>
+        <div class="factor-grid">
+            <template x-for="card in enhancedFactorCards" :key="card.key">
+                <div class="card h-100" :class="card.statusClass">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h6 class="card-title mb-0 small text-muted" x-text="card.title"></h6>
+                            <span class="badge bg-transparent border" :class="card.trendClass" x-text="card.trend"></span>
+                        </div>
+                        <div class="h5 fw-bold mb-1" :class="card.valueClass" x-text="card.value()"></div>
+                        <div class="small text-muted mb-2" x-text="card.subtitle()"></div>
+                        <div class="progress" style="height: 4px;">
+                            <div class="progress-bar" :class="card.progressClass" :style="`width: ${card.progress}%`"></div>
+                        </div>
+                        <div class="small mt-1" x-show="card.detail" x-text="card.detail()"></div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Primary Signal Details -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
             <div class="df-panel h-100 p-4">
-                <div class="d-flex align-items-center justify-content-between mb-2">
-                    <h5 class="mb-0 text-uppercase text-muted small">Primary Signal</h5>
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h5 class="mb-0 text-uppercase text-muted small">Signal Analysis</h5>
                     <span class="badge text-bg-dark" x-text="formatTime(lastUpdated)"></span>
                 </div>
-                <div class="display-5 fw-semibold mb-2" x-text="signal?.signal ?? 'NEUTRAL'"></div>
-                <dl class="row mb-0 small">
-                    <dt class="col-5 text-muted">Confidence</dt>
-                    <dd class="col-7 fw-semibold" x-text="formatPercent(signal?.confidence ? signal.confidence * 100 : null)"></dd>
-                    <dt class="col-5 text-muted">Score</dt>
-                    <dd class="col-7 fw-semibold" x-text="signal?.score?.toFixed(2) ?? '--'"></dd>
-                    <dt class="col-5 text-muted">Spot Price</dt>
-                    <dd class="col-7 fw-semibold" x-text="formatUsd(features?.microstructure?.price?.last_close)"></dd>
-                    <dt class="col-5 text-muted">AI Probability</dt>
-                    <dd class="col-7 fw-semibold">
-                        <span x-text="ai ? formatPercent(ai.probability * 100) : '--'"></span>
-                        <span class="badge ms-2" :class="aiBadgeClass()" x-text="ai?.decision ?? 'N/A'"></span>
-                        <div class="text-muted small">Edge <span x-text="ai ? formatPercent(ai.confidence * 100) : '--'"></span></div>
-                    </dd>
-                </dl>
+                <div class="text-center mb-3">
+                    <div class="display-5 fw-bold mb-2 signal-card p-3" :class="signal?.signal?.toLowerCase()">
+                        <span x-text="signal?.signal ?? 'ANALYZING'"></span>
+                    </div>
+                    <div class="row text-center g-2">
+                        <div class="col-4">
+                            <div class="small text-muted">Score</div>
+                            <div class="fw-bold" x-text="signal?.score?.toFixed(2) ?? '--'"></div>
+                        </div>
+                        <div class="col-4">
+                            <div class="small text-muted">Confidence</div>
+                            <div class="fw-bold" x-text="formatPercent(signal?.confidence ? signal.confidence * 100 : null)"></div>
+                        </div>
+                        <div class="col-4">
+                            <div class="small text-muted">Price</div>
+                            <div class="fw-bold" x-text="formatUsd(features?.microstructure?.price?.last_close)"></div>
+                        </div>
+                    </div>
+                </div>
                 <div class="mt-3">
-                    <h6 class="text-muted text-uppercase small mb-2">Reasons</h6>
+                    <h6 class="text-muted text-uppercase small mb-2">Signal Factors</h6>
                     <template x-if="!signal?.factors?.length">
-                        <p class="text-muted small mb-0">Menunggu data ...</p>
+                        <p class="text-muted small mb-0">🔄 Calculating signal factors...</p>
                     </template>
-                    <ul class="list-unstyled mb-0" x-show="signal?.factors?.length">
-                        <template x-for="(reason, idx) in signal?.factors" :key="idx">
-                            <li class="d-flex align-items-start gap-2 mb-2">
-                                <span class="badge rounded-pill bg-secondary-subtle text-secondary">
+                    <div class="max-h-200 overflow-y-auto" x-show="signal?.factors?.length">
+                        <template x-for="(reason, idx) in signal?.factors.slice(0, 5)" :key="idx">
+                            <div class="d-flex align-items-center gap-2 mb-2 p-2 bg-light rounded">
+                                <span class="badge" :class="reason.weight > 0 ? 'bg-success' : 'bg-danger'">
                                     <span x-text="reason.weight > 0 ? '+' + reason.weight : reason.weight"></span>
                                 </span>
-                                <div>
+                                <div class="flex-grow-1">
                                     <div class="fw-semibold small" x-text="reason.reason"></div>
+                                    <div class="text-muted" style="font-size: 10px;" x-text="JSON.stringify(reason.context)"></div>
                                 </div>
-                            </li>
+                            </div>
                         </template>
-                    </ul>
+                        <div class="text-center" x-show="signal?.factors?.length > 5">
+                            <small class="text-muted">+<span x-text="signal?.factors?.length - 5"></span> more factors</small>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="col-lg-8">
+        <div class="col-lg-6">
             <div class="df-panel h-100 p-4">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="mb-0 text-uppercase text-muted small">Factor Monitor</h5>
-                    <span class="badge rounded-pill text-bg-info">Auto refresh 5 menit</span>
+                    <h5 class="mb-0 text-uppercase text-muted small">Whale & Flow Analysis</h5>
+                    <span class="badge text-bg-warning-subtle text-warning fw-semibold" x-show="features?.whales?.is_stale">Stale Data</span>
                 </div>
-                <div class="row g-3">
-                    <template x-for="card in factorCards" :key="card.key">
-                        <div class="col-md-4">
-                            <div class="p-3 rounded border h-100" :class="card.variant">
-                                <div class="small text-muted text-uppercase" x-text="card.title"></div>
-                                <div class="h4 fw-semibold my-1" x-text="card.value()"></div>
-                                <div class="small text-muted" x-text="card.subtitle()"></div>
+
+                <!-- Whale Flow -->
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="bg-light rounded p-2">
+                            <div class="small text-muted">Inflow to CEX</div>
+                            <div class="fw-bold text-danger" x-text="formatUsd(features?.whales?.window_24h?.inflow_usd)"></div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="bg-light rounded p-2">
+                            <div class="small text-muted">Outflow from CEX</div>
+                            <div class="fw-bold text-success" x-text="formatUsd(features?.whales?.window_24h?.outflow_usd)"></div>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="bg-light rounded p-2">
+                            <div class="d-flex justify-content-between">
+                                <span class="small text-muted">Net Flow</span>
+                                <span class="fw-bold" :class="(features?.whales?.window_24h?.net_usd || 0) > 0 ? 'text-danger' : 'text-success'" x-text="formatUsd(features?.whales?.window_24h?.net_usd)"></span>
                             </div>
                         </div>
-                    </template>
+                    </div>
+                </div>
+
+                <!-- Long/Short Ratio -->
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="bg-light rounded p-2">
+                            <div class="small text-muted">Global L/S</div>
+                            <div class="fw-bold" x-text="formatPercent(features?.long_short?.global?.net_ratio ? features.long_short.global.net_ratio * 100 : null, 1)"></div>
+                            <div class="small text-muted" x-text="signal?.meta?.long_short_bias ?? '--'"></div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="bg-light rounded p-2">
+                            <div class="small text-muted">Top Traders L/S</div>
+                            <div class="fw-bold" x-text="formatPercent(features?.long_short?.top?.net_ratio ? features.long_short.top.net_ratio * 100 : null, 1)"></div>
+                            <div class="small text-muted" x-text="signal?.meta?.top_trader_bias ?? '--'"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status -->
+                <div class="text-center">
+                    <div class="small text-muted mb-1" x-text="whaleStatus()"></div>
+                    <div class="small text-muted">L/S Divergence: <span x-text="formatPercent(features?.long_short?.divergence ? features.long_short.divergence * 100 : null, 2)"></span></div>
                 </div>
             </div>
         </div>
@@ -758,6 +966,184 @@ document.addEventListener('alpine:init', () => {
             if (value > 0) return `+${value}`;
             return `${value}`;
         },
+
+        // Enhanced methods for the new UI features
+        dataHealthClass() {
+            const completeness = this.features?.health?.completeness ?? 0;
+            if (completeness >= 0.9) return 'health-excellent';
+            if (completeness >= 0.7) return 'health-good';
+            return 'health-poor';
+        },
+
+        get enhancedFactorCards() {
+            return [
+                {
+                    key: 'funding',
+                    title: 'Funding Heat',
+                    value: () => this.formatNumber(this.features?.funding?.heat_score, 2),
+                    subtitle: () => this.fundingInterpretation(),
+                    trend: this.fundingTrend(),
+                    trendClass: 'text-success',
+                    statusClass: this.fundingStatusClass(),
+                    valueClass: this.fundingValueClass(),
+                    progress: Math.min(100, Math.abs(this.features?.funding?.heat_score || 0) * 20),
+                    progressClass: 'bg-warning',
+                    detail: () => `Trend: ${this.fundingTrendInterpretation()}`
+                },
+                {
+                    key: 'oi',
+                    title: 'Open Interest Δ24h',
+                    value: () => this.formatPercent(this.features?.open_interest?.pct_change_24h),
+                    subtitle: () => this.oiInterpretation(),
+                    trend: this.oiTrend(),
+                    trendClass: 'text-primary',
+                    statusClass: 'bg-white',
+                    valueClass: this.oiValueClass(),
+                    progress: Math.min(100, Math.abs(this.features?.open_interest?.pct_change_24h || 0) * 10),
+                    progressClass: 'bg-info'
+                },
+                {
+                    key: 'whale',
+                    title: 'Whale Pressure',
+                    value: () => this.formatNumber(this.features?.whales?.pressure_score, 2),
+                    subtitle: () => this.whaleInterpretation(),
+                    trend: this.whaleTrend(),
+                    trendClass: 'text-info',
+                    statusClass: 'bg-white',
+                    valueClass: this.whaleValueClass(),
+                    progress: Math.min(100, Math.abs(this.features?.whales?.pressure_score || 0) * 30),
+                    progressClass: 'bg-success'
+                },
+                {
+                    key: 'etf',
+                    title: 'ETF Net Flow',
+                    value: () => this.formatUsd(this.features?.etf?.latest_flow, true),
+                    subtitle: () => this.etfInterpretation(),
+                    trend: this.etfTrend(),
+                    trendClass: 'text-success',
+                    statusClass: 'bg-white',
+                    valueClass: this.etfValueClass(),
+                    progress: Math.min(100, Math.abs((this.features?.etf?.latest_flow || 0) / 1000000) * 10),
+                    progressClass: 'bg-primary',
+                    detail: () => `Streak: ${this.formatStreak(this.features?.etf?.streak)} days`
+                },
+                {
+                    key: 'sentiment',
+                    title: 'Fear & Greed',
+                    value: () => this.features?.sentiment?.value ?? '--',
+                    subtitle: () => this.sentimentInterpretation(),
+                    trend: this.sentimentTrend(),
+                    trendClass: 'text-warning',
+                    statusClass: 'bg-white',
+                    valueClass: this.sentimentValueClass(),
+                    progress: this.features?.sentiment?.value || 0,
+                    progressClass: 'bg-warning'
+                },
+                {
+                    key: 'volatility',
+                    title: 'Volatility 24h',
+                    value: () => this.formatPercent(this.features?.microstructure?.price?.volatility_24h, 1),
+                    subtitle: () => this.volatilityInterpretation(),
+                    trend: this.volatilityTrend(),
+                    trendClass: 'text-danger',
+                    statusClass: 'bg-white',
+                    valueClass: this.volatilityValueClass(),
+                    progress: Math.min(100, (this.features?.microstructure?.price?.volatility_24h || 0) * 10),
+                    progressClass: 'bg-danger'
+                }
+            ];
+        },
+
+        fundingTrend() {
+            const trend = this.features?.funding?.trend_pct;
+            if (trend > 5) return '↗️';
+            if (trend < -5) return '↘️';
+            return '➡️';
+        },
+
+        fundingStatusClass() {
+            const heat = this.features?.funding?.heat_score;
+            if (heat > 1.5) return 'border-danger';
+            if (heat < -1.5) return 'border-success';
+            return 'border-warning';
+        },
+
+        fundingValueClass() {
+            const heat = this.features?.funding?.heat_score;
+            if (heat > 1.5) return 'text-danger';
+            if (heat < -1.5) return 'text-success';
+            return 'text-warning';
+        },
+
+        oiTrend() {
+            const pct = this.features?.open_interest?.pct_change_24h;
+            if (pct > 2) return '📈';
+            if (pct < -2) return '📉';
+            return '➡️';
+        },
+
+        oiValueClass() {
+            const pct = this.features?.open_interest?.pct_change_24h;
+            if (pct > 2) return 'text-danger';
+            if (pct < -2) return 'text-success';
+            return 'text-primary';
+        },
+
+        whaleTrend() {
+            const score = this.features?.whales?.pressure_score;
+            if (score > 1.2) return '🐋';
+            if (score < -1.2) return '🏖️';
+            return '⚖️';
+        },
+
+        whaleValueClass() {
+            const score = this.features?.whales?.pressure_score;
+            if (score > 1.2) return 'text-danger';
+            if (score < -1.2) return 'text-success';
+            return 'text-info';
+        },
+
+        etfTrend() {
+            const flow = this.features?.etf?.latest_flow;
+            if (flow > 0) return '💰';
+            if (flow < 0) return '📤';
+            return '➡️';
+        },
+
+        etfValueClass() {
+            const flow = this.features?.etf?.latest_flow;
+            if (flow > 0) return 'text-success';
+            if (flow < 0) return 'text-danger';
+            return 'text-primary';
+        },
+
+        sentimentTrend() {
+            const value = this.features?.sentiment?.value;
+            if (value >= 70) return '😰';
+            if (value <= 30) return '😱';
+            return '😐';
+        },
+
+        sentimentValueClass() {
+            const value = this.features?.sentiment?.value;
+            if (value >= 70) return 'text-danger';
+            if (value <= 30) return 'text-success';
+            return 'text-warning';
+        },
+
+        volatilityTrend() {
+            const vol = this.features?.microstructure?.price?.volatility_24h;
+            if (vol > 5) return '🌋';
+            if (vol < 1.5) return '🌊';
+            return '⚡';
+        },
+
+        volatilityValueClass() {
+            const vol = this.features?.microstructure?.price?.volatility_24h;
+            if (vol > 5) return 'text-danger';
+            if (vol < 1.5) return 'text-success';
+            return 'text-warning';
+        }
     }));
 });
 </script>
