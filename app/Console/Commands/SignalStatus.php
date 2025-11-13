@@ -100,8 +100,13 @@ class SignalStatus extends Command
                 'unlabeled' => 0,
                 'labeling_rate' => 0,
                 'symbols' => [],
+                'symbol_count' => 0,
                 'intervals' => [],
+                'interval_count' => 0,
                 'latest' => null,
+                'signal_distribution' => [],
+                'confidence_distribution' => [],
+                'daily_snapshots' => [],
             ];
         }
 

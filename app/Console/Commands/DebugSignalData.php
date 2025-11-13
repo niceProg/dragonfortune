@@ -8,13 +8,13 @@ use Illuminate\Console\Command;
 
 class DebugSignalData extends Command
 {
-    protected $signature = 'signal:debug {symbol=BTC : Symbol to check}';
+    protected $signature = 'signal:debug {--symbol=BTC : Symbol to check}';
 
     protected $description = 'Debug signal data to understand what snapshots exist and their labeling status';
 
     public function handle(): int
     {
-        $symbol = strtoupper($this->argument('symbol'));
+        $symbol = strtoupper($this->option('symbol'));
 
         $this->info("Debugging signal data for {$symbol}");
         $this->line(str_repeat('=', 50));
