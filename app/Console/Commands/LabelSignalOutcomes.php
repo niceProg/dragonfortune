@@ -68,21 +68,25 @@ class LabelSignalOutcomes extends Command
 
         // Ensure we have data that's old enough for horizon
         $cutoff = $end->copy()->subHours($horizonHours);
-        if ($start->greaterThan($cutoff)) {
-            $start = $cutoff;
-        }
 
         $this->info("Labeling snapshots for {$symbol}");
         $this->info("Date range: {$start->toIso8601String()} to {$end->toIso8601String()}");
         $this->info("Horizon: {$horizonInput} ({$horizonHours}h)");
+        $this->info("Cutoff date: {$cutoff->toIso8601String()}");
         $this->info("Strategies: " . implode(', ', $strategies));
         $this->info("Batch size: {$batchSize}");
 
         // Get snapshots to process
         $query = SignalSnapshot::where('symbol', $symbol)
-            ->whereBetween('generated_at', [$start, $end])
             ->where('generated_at', '<=', $cutoff) // Only label snapshots old enough
             ->orderByDesc('generated_at');
+
+        // Apply date range if specified, but prioritize cutoff
+        if ($start && $end) {
+            $query->whereBetween('generated_at', [$start, min($cutoff, $end)]);
+        } else {
+            $query->where('generated_at', '>=', $cutoff->copy()->subDays(30)); // Default last 30 days
+        }
 
         if (!$force) {
             $query->whereNull('price_future');
@@ -92,6 +96,18 @@ class LabelSignalOutcomes extends Command
 
         if ($snapshots->isEmpty()) {
             $this->info('No snapshots found matching criteria.');
+            $this->info('Debug: Query conditions:');
+            $this->info("  - Symbol: {$symbol}");
+            $this->info("  - Generated_at <= {$cutoff->toIso8601String()}");
+            if ($start && $end) {
+                $this->info("  - Between: {$start->toIso8601String()} and " . min($cutoff, $end)->toIso8601String());
+            }
+            $this->info("  - Only unlabeled: " . ($force ? 'false' : 'true'));
+
+            // Check what snapshots actually exist
+            $totalSnapshots = SignalSnapshot::where('symbol', $symbol)->count();
+            $this->info("Total {$symbol} snapshots in database: {$totalSnapshots}");
+
             return self::SUCCESS;
         }
 

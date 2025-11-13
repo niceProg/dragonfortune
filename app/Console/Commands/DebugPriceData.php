@@ -8,13 +8,13 @@ use Carbon\Carbon;
 
 class DebugPriceData extends Command
 {
-    protected $signature = 'debug:price-data {symbol=BTC : Symbol to check}';
+    protected $signature = 'debug:price-data {--symbol=BTC : Symbol to check}';
 
     protected $description = 'Debug price data availability across all tables';
 
     public function handle(): int
     {
-        $symbol = strtoupper($this->argument('symbol'));
+        $symbol = strtoupper($this->option('symbol'));
         $pair = "{$symbol}USDT";
 
         $this->info("🔍 Debugging price data for {$symbol}");
