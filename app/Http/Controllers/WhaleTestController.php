@@ -130,12 +130,76 @@ class WhaleTestController extends Controller
             $marketData = app(MarketDataRepository::class);
             $whaleData = $marketData->latestWhaleTransfers('BTC', null, 10);
 
+            // Analyze exchange addresses
+            $exchangeKeywords = [
+                'binance', 'coinbase', 'kraken', 'bitfinex', 'bitstamp',
+                'bybit', 'okx', 'okex', 'deribit', 'kucoin', 'mexc',
+                'huobi', 'gate', 'gemini'
+            ];
+
+            $inflows = [];
+            $outflows = [];
+            $unknown = [];
+
+            foreach ($whaleData as $transfer) {
+                $fromLower = strtolower($transfer->from_address ?? '');
+                $toLower = strtolower($transfer->to_address ?? '');
+
+                $isFromExchange = false;
+                $isToExchange = false;
+
+                foreach ($exchangeKeywords as $keyword) {
+                    if (str_contains($fromLower, $keyword)) {
+                        $isFromExchange = true;
+                    }
+                    if (str_contains($toLower, $keyword)) {
+                        $isToExchange = true;
+                    }
+                }
+
+                $transferInfo = [
+                    'amount_usd' => $transfer->amount_usd,
+                    'from_address' => $transfer->from_address,
+                    'to_address' => $transfer->to_address,
+                    'is_from_exchange' => $isFromExchange,
+                    'is_to_exchange' => $isToExchange,
+                ];
+
+                if ($isToExchange && !$isFromExchange) {
+                    $inflows[] = $transferInfo;
+                } elseif ($isFromExchange && !$isToExchange) {
+                    $outflows[] = $transferInfo;
+                } else {
+                    $unknown[] = $transferInfo;
+                }
+            }
+
+            $inflowTotal = array_sum(array_column($inflows, 'amount_usd'));
+            $outflowTotal = array_sum(array_column($outflows, 'amount_usd'));
+
             return response()->json([
                 'success' => true,
                 'whale_data' => [
                     'count' => $whaleData->count(),
                     'data' => $whaleData->toArray(),
                     'sample_structure' => $whaleData->first() ? array_keys($whaleData->first()->toArray()) : []
+                ],
+                'exchange_analysis' => [
+                    'inflows' => [
+                        'count' => count($inflows),
+                        'total_usd' => $inflowTotal,
+                        'transfers' => $inflows
+                    ],
+                    'outflows' => [
+                        'count' => count($outflows),
+                        'total_usd' => $outflowTotal,
+                        'transfers' => $outflows
+                    ],
+                    'unknown' => [
+                        'count' => count($unknown),
+                        'transfers' => array_slice($unknown, 0, 5) // Show first 5 unknown
+                    ],
+                    'net' => $inflowTotal - $outflowTotal
                 ]
             ]);
         } catch (\Exception $e) {

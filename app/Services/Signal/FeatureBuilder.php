@@ -687,35 +687,52 @@ class FeatureBuilder
             'count_outflow' => 0,
         ];
 
+        // Debug: log what we're working with
+        \Log::info("Aggregating whale flows from {$rows->count()} records");
+
         foreach ($rows as $row) {
             $amount = $this->toFloat($row->amount_usd);
+
+            // Debug: log each record
+            \Log::info("Processing whale transfer: amount={$amount}, from={$row->from_address}, to={$row->to_address}");
+
             if ($amount <= 0) {
+                \Log::info("Skipping zero/negative amount: {$amount}");
                 continue; // Skip invalid or zero amounts
             }
+
+            $isInflow = false;
+            $isOutflow = false;
 
             // Check if it's using the WhaleTransfer model or raw DB object
             if (method_exists($row, 'isExchangeInflow')) {
                 // Using WhaleTransfer model
-                if ($row->isExchangeInflow()) {
-                    $totals['inflow_usd'] += $amount;
-                    $totals['count_inflow']++;
-                } elseif ($row->isExchangeOutflow()) {
-                    $totals['outflow_usd'] += $amount;
-                    $totals['count_outflow']++;
-                }
+                $isInflow = $row->isExchangeInflow();
+                $isOutflow = $row->isExchangeOutflow();
+                \Log::info("Model detection - inflow: {$isInflow}, outflow: {$isOutflow}");
             } else {
-                // Using raw DB object
-                if ($this->isExchangeLabel($row->to_address)) {
-                    $totals['inflow_usd'] += $amount;
-                    $totals['count_inflow']++;
-                } elseif ($this->isExchangeLabel($row->from_address)) {
-                    $totals['outflow_usd'] += $amount;
-                    $totals['count_outflow']++;
-                }
+                // Using raw DB object - use our exchange detection
+                $isInflow = $this->isExchangeLabel($row->to_address);
+                $isOutflow = $this->isExchangeLabel($row->from_address);
+                \Log::info("Raw detection - inflow: {$isInflow}, outflow: {$isOutflow} (to: {$row->to_address}, from: {$row->from_address})");
+            }
+
+            if ($isInflow) {
+                $totals['inflow_usd'] += $amount;
+                $totals['count_inflow']++;
+                \Log::info("Added inflow: {$amount}");
+            } elseif ($isOutflow) {
+                $totals['outflow_usd'] += $amount;
+                $totals['count_outflow']++;
+                \Log::info("Added outflow: {$amount}");
+            } else {
+                \Log::info("No exchange address detected - treating as transfer between non-exchanges");
             }
         }
 
         $totals['net_usd'] = $totals['inflow_usd'] - $totals['outflow_usd'];
+
+        \Log::info("Final totals - inflow: {$totals['inflow_usd']}, outflow: {$totals['outflow_usd']}, net: {$totals['net_usd']}, count_inflow: {$totals['count_inflow']}, count_outflow: {$totals['count_outflow']}");
 
         return $totals;
     }
