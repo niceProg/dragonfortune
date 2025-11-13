@@ -356,6 +356,9 @@
                         <span class="badge text-bg-light">USD</span>
                         <span class="badge text-bg-warning-subtle text-warning fw-semibold" x-show="features?.whales?.is_stale">Stale</span>
                         <span class="badge text-bg-info-subtle text-info" x-show="features?.whales?.data_source" x-text="features.whales.data_source"></span>
+                        <button class="btn btn-sm btn-outline-secondary" @click="fetchWhaleDataDirect()" title="Refresh Whale Data">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
                     </div>
                 </div>
                 <dl class="row small mb-0">
@@ -464,6 +467,7 @@ document.addEventListener('alpine:init', () => {
             this.fetchData();
             this.fetchBacktest();
              this.fetchHistory();
+            this.fetchWhaleDataDirect(); // Also fetch whale data directly
             this.pollTimer = setInterval(() => this.fetchData(), this.pollMs);
             window.addEventListener('beforeunload', () => clearInterval(this.pollTimer));
         },
@@ -471,6 +475,7 @@ document.addEventListener('alpine:init', () => {
             this.fetchData();
             this.fetchBacktest();
             this.fetchHistory();
+            this.fetchWhaleDataDirect(); // Also fetch whale data directly on symbol change
         },
         async fetchData() {
             this.isLoading = true;
@@ -479,12 +484,24 @@ document.addEventListener('alpine:init', () => {
                 const response = await fetch(`${this.apiUrl}?${params.toString()}`, { headers: { Accept: 'application/json' } });
                 if (!response.ok) throw new Error(`API error ${response.status}`);
                 const data = await response.json();
+
+                // Debug: Log the entire response
+                console.log('API Response:', data);
+
                 this.signal = data.signal;
                 this.ai = data.ai;
                 this.features = data.features;
                 this.lastUpdated = data.generated_at;
+
+                // Debug: Log specifically the whale data
+                if (this.features?.whales) {
+                    console.log('Whale data found:', this.features.whales);
+                    console.log('24h window:', this.features.whales.window_24h);
+                } else {
+                    console.warn('No whale data found in features:', this.features);
+                }
             } catch (error) {
-                console.error(error);
+                console.error('Fetch error:', error);
             } finally {
                 this.isLoading = false;
             }
@@ -512,6 +529,51 @@ document.addEventListener('alpine:init', () => {
                 this.history = data.history || [];
             } catch (error) {
                 console.error(error);
+            }
+        },
+        async fetchWhaleDataDirect() {
+            try {
+                console.log('Fetching whale data directly...');
+                const response = await fetch('/test/whale-flow-api', {
+                    headers: { Accept: 'application/json' }
+                });
+                if (!response.ok) throw new Error(`Whale API error ${response.status}`);
+                const whaleData = await response.json();
+                console.log('Direct whale data:', whaleData);
+
+                // If we have whale data but no features.whales, create it manually
+                if (whaleData.success && whaleData.whale_data && !this.features?.whales) {
+                    console.log('Creating manual whale data from direct API');
+                    if (!this.features) this.features = {};
+
+                    this.features.whales = {
+                        window_24h: {
+                            inflow_usd: whaleData.whale_data.inflow_usd || 0,
+                            outflow_usd: whaleData.whale_data.outflow_usd || 0,
+                            net_usd: whaleData.whale_data.net_usd || 0,
+                            count_inflow: whaleData.whale_data.count_inflow || 0,
+                            count_outflow: whaleData.whale_data.count_outflow || 0
+                        },
+                        window_7d: {
+                            inflow_usd: whaleData.whale_data.inflow_usd || 0,
+                            outflow_usd: whaleData.whale_data.outflow_usd || 0,
+                            net_usd: whaleData.whale_data.net_usd || 0,
+                            count_inflow: whaleData.whale_data.count_inflow || 0,
+                            count_outflow: whaleData.whale_data.count_outflow || 0
+                        },
+                        pressure_score: whaleData.whale_data.pressure_score || 0,
+                        cex_ratio: whaleData.whale_data.cex_ratio || 0,
+                        sample_size: {
+                            d24: whaleData.whale_data.count || 0,
+                            d7: whaleData.whale_data.count || 0
+                        },
+                        is_stale: false,
+                        data_source: 'direct_api',
+                        total_transfers: whaleData.whale_data.count || 0
+                    };
+                }
+            } catch (error) {
+                console.error('Direct whale fetch error:', error);
             }
         },
         pairLabel() {
@@ -648,20 +710,46 @@ document.addEventListener('alpine:init', () => {
             return 'Netral';
         },
         whaleStatus() {
-            if (!this.features?.whales) return 'Menunggu data whale tracking';
+            // Debug: Always log current state
+            console.log('Whale status check - features:', this.features);
+            console.log('Whale data:', this.features?.whales);
+
+            if (!this.features?.whales) {
+                console.log('No whale features found');
+                return 'Menunggu data whale tracking...';
+            }
 
             // Show error message if there's a database error
             if (this.features.whales.error) {
+                console.log('Whale error:', this.features.whales.error);
                 return `Error: ${this.features.whales.error}`;
             }
 
-            if (this.features.whales.is_stale) return 'Belum ada catatan transfer baru >7 hari';
+            // Check if whales data exists but window_24h is missing/empty
+            if (!this.features.whales.window_24h) {
+                console.log('No window_24h data in whale features');
+                return 'Data sedang diproses...';
+            }
 
-            const inflow = this.features.whales.window_24h?.count_inflow ?? 0;
-            const outflow = this.features.whales.window_24h?.count_outflow ?? 0;
+            if (this.features.whales.is_stale) {
+                console.log('Whale data is stale');
+                return 'Belum ada catatan transfer baru >7 hari';
+            }
+
+            const window24h = this.features.whales.window_24h;
+            const inflow = window24h.count_inflow ?? 0;
+            const outflow = window24h.count_outflow ?? 0;
             const total = inflow + outflow;
 
+            console.log('Whale counts - Inflow:', inflow, 'Outflow:', outflow, 'Total:', total);
+
             if (total === 0) {
+                // Check if we have monetary values but no counts
+                const inflowUsd = window24h.inflow_usd ?? 0;
+                const outflowUsd = window24h.outflow_usd ?? 0;
+                if (inflowUsd > 0 || outflowUsd > 0) {
+                    return `Processing ${this.formatUsd(inflowUsd + outflowUsd)} in whale transfers`;
+                }
                 return 'Tidak ada transfer besar 24 jam terakhir';
             }
 
