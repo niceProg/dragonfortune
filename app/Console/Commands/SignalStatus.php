@@ -54,6 +54,7 @@ class SignalStatus extends Command
     protected function gatherStatusData(?string $symbol, string $period): array
     {
         $now = now('UTC');
+        $detailed = $this->option('detailed');
         $periodMap = [
             '1h' => $now->copy()->subHour(),
             '24h' => $now->copy()->subDay(),

@@ -104,6 +104,304 @@ class LabelSignalOutcomes extends Command
         return self::SUCCESS;
     }
 
+    protected function parseHorizon(string $horizon): ?int
+    {
+        if (preg_match('/^(\d+)h$/i', $horizon, $matches)) {
+            return (int) $matches[1];
+        }
+        if (preg_match('/^(\d+)d$/i', $horizon, $matches)) {
+            return (int) $matches[1] * 24;
+        }
+        return null;
+    }
+
+    protected function parseStrategies(string $input): array
+    {
+        $available = ['basic', 'breakout', 'mean-reversion', 'momentum'];
+        $requested = explode(',', $input);
+        return array_intersect($available, array_map('trim', $requested));
+    }
+
+    protected function processBatch(
+        \Illuminate\Database\Eloquent\Collection $snapshots,
+        array $strategies,
+        int $horizonHours,
+        int $batchSize,
+        bool $skipErrors
+    ): array {
+        $results = [];
+        $chunks = $snapshots->chunk($batchSize);
+
+        foreach ($chunks as $index => $chunk) {
+            $this->info("Processing batch " . ($index + 1) . "/" . $chunks->count() . " (" . $chunk->count() . " snapshots)");
+
+            foreach ($chunk as $snapshot) {
+                try {
+                    $result = $this->labelSnapshotAdvanced($snapshot, $strategies, $horizonHours);
+                    $results[] = $result;
+
+                    if ($result['labeled']) {
+                        $this->line("✓ {$snapshot->generated_at}: {$result['direction']} ({$result['magnitude']}%)");
+                    } else {
+                        $this->warn("✗ {$snapshot->generated_at}: {$result['error']}");
+                    }
+
+                } catch (\Exception $e) {
+                    if ($skipErrors) {
+                        $results[] = [
+                            'timestamp' => $snapshot->generated_at,
+                            'labeled' => false,
+                            'error' => $e->getMessage(),
+                            'direction' => null,
+                            'magnitude' => null
+                        ];
+                        $this->warn("⚠️  Error processing {$snapshot->generated_at}: {$e->getMessage()}");
+                    } else {
+                        throw $e;
+                    }
+                }
+            }
+        }
+
+        return $results;
+    }
+
+    protected function labelSnapshotAdvanced(SignalSnapshot $snapshot, array $strategies, int $horizonHours): array
+    {
+        $timestamp = $snapshot->generated_at;
+        $futureTime = Carbon::parse($timestamp, 'UTC')->addHours($horizonHours);
+
+        // Skip if future time hasn't arrived yet
+        if ($futureTime->isFuture()) {
+            return [
+                'timestamp' => $timestamp,
+                'labeled' => false,
+                'error' => 'Future time not reached',
+                'direction' => null,
+                'magnitude' => null
+            ];
+        }
+
+        // Get current and future prices
+        $currentPrice = $snapshot->price_now;
+        $futurePrice = $this->getPriceAt($snapshot->symbol, $futureTime);
+
+        if ($currentPrice === null || $futurePrice === null) {
+            return [
+                'timestamp' => $timestamp,
+                'labeled' => false,
+                'error' => 'Price data unavailable',
+                'direction' => null,
+                'magnitude' => null
+            ];
+        }
+
+        // Calculate basic return
+        $return = (($futurePrice - $currentPrice) / $currentPrice) * 100;
+
+        // Apply labeling strategies
+        $labels = [];
+        foreach ($strategies as $strategy) {
+            $label = $this->applyStrategy($strategy, $currentPrice, $futurePrice, $return, $snapshot, $futureTime);
+            $labels[$strategy] = $label;
+        }
+
+        // Use ensemble or fallback to basic
+        $finalLabel = $this->ensembleLabels($labels) ?? $labels['basic'];
+
+        // Update snapshot
+        $snapshot->update([
+            'price_future' => $futurePrice,
+            'label_direction' => $finalLabel['direction'],
+            'label_magnitude' => $finalLabel['magnitude'],
+            'labeled_at' => now('UTC')
+        ]);
+
+        return [
+            'timestamp' => $timestamp,
+            'labeled' => true,
+            'error' => null,
+            'direction' => $finalLabel['direction'],
+            'magnitude' => $finalLabel['magnitude'],
+            'return' => $return,
+            'strategies' => $labels
+        ];
+    }
+
+    protected function applyStrategy(string $strategy, float $currentPrice, float $futurePrice, float $return, SignalSnapshot $snapshot, Carbon $futureTime): array
+    {
+        switch ($strategy) {
+            case 'basic':
+                return $this->basicLabeling($return);
+
+            case 'breakout':
+                return $this->breakoutLabeling($currentPrice, $futurePrice, $snapshot, $futureTime);
+
+            case 'mean-reversion':
+                return $this->meanReversionLabeling($currentPrice, $futurePrice, $snapshot, $futureTime);
+
+            case 'momentum':
+                return $this->momentumLabeling($return, $snapshot);
+
+            default:
+                return $this->basicLabeling($return);
+        }
+    }
+
+    protected function basicLabeling(float $return): array
+    {
+        if ($return > 0.5) {
+            return ['direction' => 'UP', 'magnitude' => $return];
+        } elseif ($return < -0.5) {
+            return ['direction' => 'DOWN', 'magnitude' => $return];
+        } else {
+            return ['direction' => 'SIDEWAYS', 'magnitude' => $return];
+        }
+    }
+
+    protected function breakoutLabeling(float $currentPrice, float $futurePrice, SignalSnapshot $snapshot, Carbon $futureTime): array
+    {
+        // Simplified breakout labeling
+        $return = (($futurePrice - $currentPrice) / $currentPrice) * 100;
+
+        if ($return > 2.0) {
+            return ['direction' => 'UP', 'magnitude' => $return];
+        } elseif ($return < -2.0) {
+            return ['direction' => 'DOWN', 'magnitude' => $return];
+        } else {
+            return ['direction' => 'SIDEWAYS', 'magnitude' => $return];
+        }
+    }
+
+    protected function meanReversionLabeling(float $currentPrice, float $futurePrice, SignalSnapshot $snapshot, Carbon $futureTime): array
+    {
+        // Simplified mean reversion labeling
+        $return = (($futurePrice - $currentPrice) / $currentPrice) * 100;
+
+        // Check if there's reversion
+        $signal = $snapshot->signal_rule;
+        if ($signal === 'BUY' && $return < 0) {
+            return ['direction' => 'UP', 'magnitude' => $return]; // Corrected
+        } elseif ($signal === 'SELL' && $return > 0) {
+            return ['direction' => 'DOWN', 'magnitude' => $return]; // Corrected
+        } else {
+            return $this->basicLabeling($return);
+        }
+    }
+
+    protected function momentumLabeling(float $return, SignalSnapshot $snapshot): array
+    {
+        // Simplified momentum labeling
+        $signal = $snapshot->signal_rule;
+        $confidence = $snapshot->signal_score;
+
+        if ($confidence > 1.5) {
+            $expectedDirection = $signal === 'BUY' ? 'UP' : ($signal === 'SELL' ? 'DOWN' : 'SIDEWAYS');
+        } else {
+            $expectedDirection = $this->basicLabeling($return)['direction'];
+        }
+
+        return [
+            'direction' => $expectedDirection,
+            'magnitude' => $return,
+            'confidence_based' => $confidence > 1.5
+        ];
+    }
+
+    protected function ensembleLabels(array $labels): ?array
+    {
+        if (empty($labels)) {
+            return null;
+        }
+
+        $directions = array_count_values(array_column($labels, 'direction'));
+        $majorityDirection = array_keys($directions, max($directions))[0];
+
+        // Average magnitude for majority direction
+        $majorityLabels = array_filter($labels, fn ($l) => $l['direction'] === $majorityDirection);
+        $avgMagnitude = collect($majorityLabels)->avg('magnitude') ?? 0;
+
+        return [
+            'direction' => $majorityDirection,
+            'magnitude' => $avgMagnitude,
+            'confidence' => $directions[$majorityDirection] / count($labels),
+            'voting' => $directions
+        ];
+    }
+
+    protected function getPriceAt(string $symbol, Carbon $timestamp): ?float
+    {
+        try {
+            $pair = "{$symbol}USDT";
+            $price = $this->marketData->spotPriceAt($pair, $timestamp->valueOf(), $snapshot->interval ?? '1h');
+            return $price ? (float) $price : null;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    protected function validateAndShowStatistics(array $results): void
+    {
+        $labeled = collect($results)->filter(fn ($r) => $r['labeled']);
+        $byDirection = $labeled->groupBy('direction');
+
+        $this->info("\n=== Labeling Statistics ===");
+        $this->info("Total processed: " . count($results));
+        $this->info("Successfully labeled: " . $labeled->count());
+        $this->info("Success rate: " . number_format($labeled->count() / count($results) * 100, 1) . "%");
+
+        foreach ($byDirection as $direction => $items) {
+            $avgMag = $items->avg('magnitude');
+            $this->info("{$direction}: {$items->count()} (avg magnitude: " . number_format($avgMag, 2) . "%)");
+        }
+    }
+
+    protected function displayResults(array $results, string $format): void
+    {
+        switch ($format) {
+            case 'json':
+                $this->line(json_encode($results, JSON_PRETTY_PRINT));
+                break;
+            case 'csv':
+                $this->displayCsvResults($results);
+                break;
+            default:
+                $this->displayTableResults($results);
+                break;
+        }
+    }
+
+    protected function displayTableResults(array $results): void
+    {
+        $tableData = collect($results)->map(function ($result) {
+            return [
+                $result['timestamp'],
+                $result['labeled'] ? '✓' : '✗',
+                $result['direction'] ?? '--',
+                $result['magnitude'] ? number_format($result['magnitude'], 2) . '%' : '--',
+                $result['error'] ?? ''
+            ];
+        })->toArray();
+
+        $this->table(['Timestamp', 'Labeled', 'Direction', 'Magnitude', 'Error'], $tableData);
+    }
+
+    protected function displayCsvResults(array $results): void
+    {
+        $csv = "timestamp,labeled,direction,magnitude,error\n";
+        foreach ($results as $result) {
+            $csv .= sprintf(
+                "%s,%s,%s,%s,%s\n",
+                $result['timestamp'],
+                $result['labeled'] ? '1' : '0',
+                $result['direction'] ?? '',
+                $result['magnitude'] ?? '',
+                str_replace(',', ';', $result['error'] ?? '')
+            );
+        }
+        $this->line($csv);
+    }
+
     protected function resolveDirection(?float $delta): ?string
     {
         if ($delta === null) {
