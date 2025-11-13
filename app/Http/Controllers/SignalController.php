@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SignalSnapshot;
+use App\Models\SignalAnalytics;
 use App\Services\Signal\AiSignalService;
 use App\Services\Signal\BacktestService;
 use App\Services\Signal\FeatureBuilder;
@@ -98,6 +99,67 @@ class SignalController extends Controller
             'success' => true,
             'symbol' => $symbol,
             'history' => $history,
+        ]);
+    }
+
+    public function getAnalytics(Request $request): JsonResponse
+    {
+        $symbol = strtoupper($request->input('symbol', 'BTC'));
+        $hours = (int) $request->input('hours', 24);
+
+        // Get latest signal history analytics
+        $historyAnalytics = SignalAnalytics::getLatest($symbol, 'history', $hours);
+        $backtestAnalytics = SignalAnalytics::getLatest($symbol, 'backtest', $hours);
+
+        return response()->json([
+            'success' => true,
+            'symbol' => $symbol,
+            'hours' => $hours,
+            'history' => $historyAnalytics ? [
+                'data' => $historyAnalytics->data,
+                'generated_at' => $historyAnalytics->generated_at->toIso8601String(),
+                'metadata' => $historyAnalytics->metadata,
+            ] : null,
+            'backtest' => $backtestAnalytics ? [
+                'data' => $backtestAnalytics->data,
+                'generated_at' => $backtestAnalytics->generated_at->toIso8601String(),
+                'metadata' => $backtestAnalytics->metadata,
+            ] : null,
+        ]);
+    }
+
+    public function getAnalyticsHistory(Request $request): JsonResponse
+    {
+        $symbol = strtoupper($request->input('symbol', 'BTC'));
+        $startDate = $request->input('start_date');
+        $endDate = $request->input('end_date');
+
+        $historyAnalytics = SignalAnalytics::getHistoryForPeriod($symbol, $startDate, $endDate);
+        $backtestAnalytics = SignalAnalytics::getBacktestForPeriod($symbol, $startDate, $endDate);
+
+        return response()->json([
+            'success' => true,
+            'symbol' => $symbol,
+            'period' => [
+                'start' => $startDate,
+                'end' => $endDate,
+            ],
+            'history_analytics' => $historyAnalytics->map(function ($analytics) {
+                return [
+                    'id' => $analytics->id,
+                    'data' => $analytics->data,
+                    'generated_at' => $analytics->generated_at->toIso8601String(),
+                    'metadata' => $analytics->metadata,
+                ];
+            }),
+            'backtest_analytics' => $backtestAnalytics->map(function ($analytics) {
+                return [
+                    'id' => $analytics->id,
+                    'data' => $analytics->data,
+                    'generated_at' => $analytics->generated_at->toIso8601String(),
+                    'metadata' => $analytics->metadata,
+                ];
+            }),
         ]);
     }
 }

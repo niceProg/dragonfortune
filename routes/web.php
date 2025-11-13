@@ -73,6 +73,10 @@ Route::get('/api/signal/analytics', [SignalController::class, 'show'])->name('ap
 Route::get('/api/signal/backtest', [SignalController::class, 'backtest'])->name('api.signal.backtest');
 Route::get('/api/signal/history', [SignalController::class, 'history'])->name('api.signal.history');
 
+// Analytics API endpoints
+Route::get('/api/signal/analytics/data', [SignalController::class, 'getAnalytics'])->name('api.signal.analytics.data');
+Route::get('/api/signal/analytics/history', [SignalController::class, 'getAnalyticsHistory'])->name('api.signal.analytics.history');
+
 // Coinglass API Proxy Routes
 
 // On-Chain Metrics API Proxy

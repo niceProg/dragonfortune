@@ -280,6 +280,92 @@
         </div>
     </div>
 
+    <!-- Signal History Analytics -->
+    <div class="df-panel p-4 mb-4" x-show="historyAnalytics">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">📊 Signal History Analytics</h5>
+            <span class="badge text-bg-primary" x-show="historyAnalytics?.generated_at" x-text="`Last: ${formatTime(historyAnalytics.generated_at)}`"></span>
+        </div>
+
+        <template x-if="historyAnalytics?.data">
+            <div class="row g-3">
+                <div class="col-md-6 col-lg-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="small text-muted text-uppercase">Total Signals</div>
+                        <div class="h4 mb-0" x-text="formatNumber(historyAnalytics.data.statistics?.total_signals)"></div>
+                        <div class="text-muted small" x-text="`${formatNumber(historyAnalytics.data.statistics?.labeled_signals)} labeled`"></div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="small text-muted text-uppercase">Labeling Rate</div>
+                        <div class="h4 mb-0" x-text="formatPercent((historyAnalytics.data.statistics?.labeled_signals / historyAnalytics.data.statistics?.total_signals) * 100)"></div>
+                        <div class="text-muted small">Signals with outcomes</div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="small text-muted text-uppercase">Avg Score</div>
+                        <div class="h4 mb-0" x-text="formatNumber(historyAnalytics.data.statistics?.avg_score, 3)"></div>
+                        <div class="text-muted small">Signal confidence avg</div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="small text-muted text-uppercase">Data Quality</div>
+                        <div class="h4 mb-0" x-text="formatPercent(((historyAnalytics.data.statistics?.total_signals - historyAnalytics.data.statistics?.missing_data) / historyAnalytics.data.statistics?.total_signals) * 100)"></div>
+                        <div class="text-muted small" x-text="`${formatNumber(historyAnalytics.data.statistics?.missing_data)} missing`"></div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <template x-if="!historyAnalytics?.data">
+            <p class="text-muted mb-0">No signal history analytics available. Generate using: <code>php artisan signal:history --overview --save</code></p>
+        </template>
+    </div>
+
+    <!-- Backtest Analytics -->
+    <div class="df-panel p-4 mb-4" x-show="backtestAnalytics">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">📈 Backtest Analytics</h5>
+            <span class="badge text-bg-success" x-show="backtestAnalytics?.generated_at" x-text="`Last: ${formatTime(backtestAnalytics.generated_at)}`"></span>
+        </div>
+
+        <template x-if="backtestAnalytics?.data">
+            <div class="row g-3">
+                <template x-for="(strategy, key) in backtestAnalytics.data.strategies" :key="key">
+                    <div class="col-lg-6">
+                        <div class="border rounded p-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0 text-uppercase" x-text="strategy.strategy"></h6>
+                                <span class="badge" :class="strategy.total_return > 0 ? 'bg-success' : 'bg-danger'" x-text="formatPercent(strategy.total_return)"></span>
+                            </div>
+                            <div class="row g-2 text-center">
+                                <div class="col-4">
+                                    <div class="small text-muted">Trades</div>
+                                    <div class="fw-bold" x-text="strategy.total_trades"></div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="small text-muted">Win Rate</div>
+                                    <div class="fw-bold" x-text="formatPercent(strategy.win_rate)"></div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="small text-muted">Sharpe</div>
+                                    <div class="fw-bold" x-text="formatNumber(strategy.sharpe_ratio, 2)"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <template x-if="!backtestAnalytics?.data">
+            <p class="text-muted mb-0">No backtest analytics available. Generate using: <code>php artisan backtest:overview --save</code></p>
+        </template>
+    </div>
+
     <!-- Primary Signal Details -->
     <div class="row g-3 mb-4">
         <div class="col-lg-6">
@@ -661,12 +747,17 @@ document.addEventListener('alpine:init', () => {
         apiUrl: '{{ route('api.signal.analytics') }}',
         backtestApi: '{{ route('api.signal.backtest') }}',
         historyApi: '{{ route('api.signal.history') }}',
+        analyticsApi: '{{ route('api.signal.analytics.data') }}',
         backtest: null,
+        analytics: null,
+        historyAnalytics: null,
+        backtestAnalytics: null,
         symbols: @json(array_values(config('signal.symbols', ['BTC']))),
         init() {
             this.fetchData();
             this.fetchBacktest();
-             this.fetchHistory();
+            this.fetchHistory();
+            this.fetchAnalytics();
             this.pollTimer = setInterval(() => this.fetchData(), this.pollMs);
             window.addEventListener('beforeunload', () => clearInterval(this.pollTimer));
         },
@@ -674,6 +765,7 @@ document.addEventListener('alpine:init', () => {
             this.fetchData();
             this.fetchBacktest();
             this.fetchHistory();
+            this.fetchAnalytics();
         },
         async fetchData() {
             this.isLoading = true;
@@ -690,6 +782,19 @@ document.addEventListener('alpine:init', () => {
                 console.error(error);
             } finally {
                 this.isLoading = false;
+            }
+        },
+        async fetchAnalytics() {
+            try {
+                const params = new URLSearchParams({ symbol: this.symbol, hours: 24 });
+                const response = await fetch(`${this.analyticsApi}?${params.toString()}`, { headers: { Accept: 'application/json' } });
+                if (!response.ok) throw new Error(`Analytics API error ${response.status}`);
+                const data = await response.json();
+                this.analytics = data;
+                this.historyAnalytics = data.history;
+                this.backtestAnalytics = data.backtest;
+            } catch (error) {
+                console.error('Analytics fetch error:', error);
             }
         },
         async fetchBacktest() {
