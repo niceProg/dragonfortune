@@ -286,8 +286,8 @@ class SignalCleanup extends Command
         $this->line("📦 Creating archive table if it doesn't exist...");
 
         DB::statement("
-            CREATE TABLE IF NOT EXISTS signal_snapshots_archive (
-                LIKE signal_snapshots INCLUDING ALL
+            CREATE TABLE IF NOT EXISTS cg_signal_dataset_archive (
+                LIKE cg_signal_dataset INCLUDING ALL
             )
         ");
     }
@@ -297,7 +297,7 @@ class SignalCleanup extends Command
         // Move to archive in batches to avoid memory issues
         $query->orderBy('id')->chunk(1000, function ($snapshots) {
             foreach ($snapshots as $snapshot) {
-                DB::table('signal_snapshots_archive')->insert($snapshot->toArray());
+                DB::table('cg_signal_dataset_archive')->insert($snapshot->toArray());
                 $snapshot->delete();
             }
         });
@@ -309,7 +309,7 @@ class SignalCleanup extends Command
         foreach ($chunks as $chunk) {
             $snapshots = SignalSnapshot::whereIn('id', $chunk)->get();
             foreach ($snapshots as $snapshot) {
-                DB::table('signal_snapshots_archive')->insert($snapshot->toArray());
+                DB::table('cg_signal_dataset_archive')->insert($snapshot->toArray());
                 $snapshot->delete();
             }
         }
@@ -318,7 +318,7 @@ class SignalCleanup extends Command
     protected function runVacuum(): void
     {
         $this->line("🧹 Running database vacuum...");
-        DB::statement('VACUUM signal_snapshots');
+        DB::statement('VACUUM cg_signal_dataset');
         $this->line("✅ Vacuum completed");
     }
 

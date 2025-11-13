@@ -6,6 +6,7 @@ use App\Models\SignalSnapshot;
 use App\Repositories\MarketDataRepository;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 class LabelSignalOutcomes extends Command
 {
@@ -184,13 +185,24 @@ class LabelSignalOutcomes extends Command
 
         // Get current and future prices
         $currentPrice = $snapshot->price_now;
-        $futurePrice = $this->getPriceAt($snapshot->symbol, $futureTime);
 
-        if ($currentPrice === null || $futurePrice === null) {
+        // If current price is missing, try to get it from our price data sources
+        if ($currentPrice === null || $currentPrice <= 0) {
+            $currentPrice = $this->getPriceAt($snapshot->symbol, Carbon::parse($snapshot->generated_at), $snapshot->interval ?? '1h');
+
+            // Update the snapshot if we found a price
+            if ($currentPrice && $currentPrice > 0) {
+                $snapshot->update(['price_now' => $currentPrice]);
+            }
+        }
+
+        $futurePrice = $this->getPriceAt($snapshot->symbol, $futureTime, $snapshot->interval ?? '1h');
+
+        if ($currentPrice === null || $futurePrice === null || $currentPrice <= 0) {
             return [
                 'timestamp' => $timestamp,
                 'labeled' => false,
-                'error' => 'Price data unavailable',
+                'error' => 'Price data unavailable (current: ' . ($currentPrice ?? 'null') . ', future: ' . ($futurePrice ?? 'null') . ')',
                 'direction' => null,
                 'magnitude' => null
             ];
@@ -329,12 +341,73 @@ class LabelSignalOutcomes extends Command
         ];
     }
 
-    protected function getPriceAt(string $symbol, Carbon $timestamp): ?float
+    protected function getPriceAt(string $symbol, Carbon $timestamp, string $interval = '1h'): ?float
     {
         try {
             $pair = "{$symbol}USDT";
-            $price = $this->marketData->spotPriceAt($pair, $timestamp->valueOf(), $snapshot->interval ?? '1h');
-            return $price ? (float) $price : null;
+
+            // First try the MarketDataRepository
+            $price = $this->marketData->spotPriceAt($pair, $timestamp->valueOf(), $interval);
+            if ($price) {
+                return (float) $price;
+            }
+
+            // PRIMARY: Get historical price from cg_spot_price_history table
+            $historicalPrice = DB::table('cg_spot_price_history')
+                ->where('symbol', $symbol)
+                ->where('time', '<=', $timestamp->timestamp)
+                ->orderByDesc('time')
+                ->first();
+
+            if ($historicalPrice && $historicalPrice->close) {
+                return (float) $historicalPrice->close;
+            }
+
+            // Fallback 1: Try to get price from cg_spot_coins_markets table (current prices)
+            $currentPrice = DB::table('cg_spot_coins_markets')
+                ->where('symbol', $symbol)
+                ->first();
+
+            if ($currentPrice && $currentPrice->current_price) {
+                return (float) $currentPrice->current_price;
+            }
+
+            // Fallback 2: Try to get historical price from aggregated volume history
+            $historicalPrice = DB::table('cg_spot_aggregated_taker_volume_history')
+                ->where('symbol', $symbol)
+                ->where('time', '<=', $timestamp->timestamp)
+                ->orderByDesc('time')
+                ->first();
+
+            if ($historicalPrice) {
+                // This table doesn't have direct price, so try other sources
+            }
+
+            // Fallback 3: Check if we have any price data in signal features
+            $signalPrice = DB::table('cg_signal_dataset')
+                ->where('symbol', $symbol)
+                ->where('generated_at', '<=', $timestamp)
+                ->whereNotNull('price_now')
+                ->where('price_now', '>', 0)
+                ->orderByDesc('generated_at')
+                ->first();
+
+            if ($signalPrice && $signalPrice->price_now) {
+                return (float) $signalPrice->price_now;
+            }
+
+            // Fallback 4: Try futures data if spot not available
+            $futuresPrice = DB::table('cg_funding_rate_history')
+                ->where('pair', $pair)
+                ->where('time', '<=', $timestamp->timestamp)
+                ->orderByDesc('time')
+                ->first();
+
+            if ($futuresPrice && $futuresPrice->close) {
+                return (float) $futuresPrice->close;
+            }
+
+            return null;
         } catch (\Exception $e) {
             return null;
         }
